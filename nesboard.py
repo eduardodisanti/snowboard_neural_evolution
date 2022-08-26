@@ -10,6 +10,8 @@ import pygame, sys, os, random
 SKIER_LEFT  = 0
 SKIER_RIGHT = 1
 
+initial_energy = 300
+
 skier_images = ["images/skier_down.png",
                 "images/snowboarder_right1.png",
                 "images/snowboarder_right2.png",
@@ -35,6 +37,7 @@ class SkierClass(pygame.sprite.Sprite):
         self.rect.center = [random.randint(20, 620), 100]
         self.angle = 0
         self.score = 0
+        self.energy = initial_energy
         self.speed = [0, start_speed]
         
     def turn(self, direction):
@@ -46,6 +49,7 @@ class SkierClass(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = center
         self.speed = [self.angle, self.speed[1] - abs(self.angle) * 2]
+        self.energy-=1
         return self.speed
     
     def move(self):
@@ -77,11 +81,22 @@ def create_map():
         location = [col * 64 + 20, row * 64 + 20 + 640]
         if not (location in locations):
             locations.append(location)
-            type = random.choice(["tree", "flag"])
+            type = random.choices(["tree", "flag", "trait", "ice", "plown"], weights=[6,2,1,0.5,0.5])[0]
             if type == "tree": 
                 tr = random.randint(1,3)
                 img = "images/pine_"+str(tr)+".png"
-            elif type == "flag": img = "images/skier_flag.png"
+            elif type == "flag": 
+                    img = "images/skier_flag.png"
+            elif type == "trait":
+                    tr = random.randint(2,5)
+                    img = "images/reward_" + str(tr) + ".png"
+            elif type == "ice":
+                    tr = random.randint(2,5)
+                    img = "images/ice.png"
+            elif type == "plown":
+                    tr = random.randint(2,5)
+                    img = "images/plown.png"
+            print(type, img)
             obstacle = ObstacleClass(img, location, type)
             obstacles.add(obstacle)
 
@@ -90,18 +105,28 @@ def animate():
     obstacles.draw(screen)
     for skier in skiers:
         screen.blit(skier.image, skier.rect)
-    screen.blit(score_text, [10, 10])
+    screen.blit(score_text,  [ 10, 10])
+    screen.blit(energy_text, [300, 10])
     pygame.display.flip()
 
 def sample_action(sk):
     
     return random.randint(0,2)
-    
+
+def kill_skier(skier, hit=True):
+    if hit:
+        skier.image = pygame.image.load("images/skier_crash.jpg")
+    animate()
+    #pygame.time.delay(10)
+    skiers.remove(skier)
+    skier.kill()
+
 def main():    
     global screen
     global obstacles
     global skiers
     global score_text
+    global energy_text
     global scroll_speed
     
     num_skiers = 44
@@ -114,7 +139,7 @@ def main():
         skier = SkierClass()
         skiers.append(skier)
     
-    start_speed = 10
+    start_speed = 20
     scroll_speed = start_speed
     obstacles = pygame.sprite.Group()
     map_position = 0
@@ -124,7 +149,7 @@ def main():
     
     running = True
     while running:
-        clock.tick(30)
+        clock.tick(int(scroll_speed))
         for event in pygame.event.get():
             skier = skiers[0]
             if event.type == pygame.QUIT:
@@ -143,7 +168,10 @@ def main():
             map_position = 0
 
         best_score = 0
+        best_energy = 0
         for skier in skiers:
+            if skier.energy > best_energy:
+                best_energy = skier.energy
             if skier.score > best_score:
                 best_score = skier.score
             action = sample_action(skier)
@@ -153,47 +181,52 @@ def main():
                 skier.turn(1)
             skier.move()
             hit = pygame.sprite.spritecollide(skier, obstacles, False)
+            if skier.energy <= 0:
+                kill_skier(skier, hit=False)
             if hit:
-                if hit[0].type == "tree":
-                    skier.image = pygame.image.load("images/skier_crash.jpg")
-                    animate()
-                    #pygame.time.delay(10)
-                    skiers.remove(skier)
-                    skier.kill()
+                if hit[0].type == "tree" or hit[0].type == "ice" or hit[0].type == "plown":
+                    kill_skier(skier, hit=True)
                     
                 elif hit[0].type == "flag":
                     skier.score += points
-                    #hit[0].kill()
-                alive_skiers= len(skiers)
-                if alive_skiers==0:
-                    pygame.time.delay(1000)
-                    screen.fill([255, 255, 255])
-                    game_over = font.render("Game Over!", 1, (0, 0, 0))
-                    scores_rows = []
-                    scores_table = []
-                    for row in scores_rows:
-                        scores_table.append(row.split(":"))
-                    for i in range(len(scores_table)):
-                        high_player = "{}. {:.<100}".format(i + 1, scores_table[i][0])
-                        high_score = "{}  ".format(scores_table[i][1])
-                        high_player_surf = font.render(high_player, 1, (0, 0, 0))
-                        high_score_surf = font.render(high_score, 1, (0, 0, 0), (255, 255, 255))
-                        screen.blit(high_player_surf, [20, 250 + 50 * i])
-                        screen.blit(high_score_surf, [640 - high_score_surf.get_width(), 250 + 50 * i])
-                    table_header = font.render("High Scores:", 1, (0, 0, 0))
-                    screen.blit(table_header, [20, 170])    
-                    screen.blit(score_text, [20, 70])
-                    screen.blit(game_over, [20, 20])
-                    pygame.display.flip()
-                    while True:
-                        clock.tick(20)
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT: sys.exit()
+                    
+                elif hit[0].type == "trait":
+                    skier.energy += 10
+                    if skier.energy > initial_energy:
+                        skier.energy = initial_energy
+                    hit[0].kill()
             skier.score+=1
             
+        alive_skiers= len(skiers)
+        if alive_skiers==0:
+            pygame.time.delay(1000)
+            screen.fill([255, 255, 255])
+            game_over = font.render("Game Over!", 1, (0, 0, 0))
+            scores_rows = []
+            scores_table = []
+            for row in scores_rows:
+                scores_table.append(row.split(":"))
+            for i in range(len(scores_table)):
+                high_player = "{}. {:.<100}".format(i + 1, scores_table[i][0])
+                high_score = "{}  ".format(scores_table[i][1])
+                high_player_surf = font.render(high_player, 1, (0, 0, 0))
+                high_score_surf = font.render(high_score, 1, (0, 0, 0), (255, 255, 255))
+                screen.blit(high_player_surf, [20, 250 + 50 * i])
+                screen.blit(high_score_surf, [640 - high_score_surf.get_width(), 250 + 50 * i])
+            table_header = font.render("High Scores:", 1, (0, 0, 0))
+            screen.blit(table_header, [20, 170])    
+            screen.blit(score_text, [20, 70])
+            screen.blit(game_over, [20, 20])
+            pygame.display.flip()
+            while True:
+                clock.tick(20)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT: sys.exit()
+            
         obstacles.update()
-        score_text = font.render("Best score: " + str(best_score), 1, (0, 0, 0))
-        scroll_speed+=5e-2
+        score_text  = font.render("Best score: " + str(best_score), 1, (0, 0, 0))
+        energy_text = font.render("Energy: " + str(best_energy), 1, (0, 0, 0))
+        scroll_speed+=1e-2
         points = int(scroll_speed / start_speed)
         animate()
 
