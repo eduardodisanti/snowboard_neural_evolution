@@ -1,11 +1,12 @@
 #!/usr/bin/env python
-"""A simple mod of SkiFree"""
+"""A Neural evolution based on SkiFree"""
 
 # Source code taken from Warren Sande at
 # http://www.manning-source.com/books/sande/All_Files_By_Chapter/hw_ch10_code/skiing_game.py
 # Released under the MIT license http://www.opensource.org/licenses/mit-license.php
 
 import pygame, sys, os, random
+from environment import SnowboardEnvironment
 
 SKIER_LEFT  = 0
 SKIER_RIGHT = 1
@@ -72,7 +73,7 @@ class ObstacleClass(pygame.sprite.Sprite):
         if self.rect.centery < -32:
             self.kill()
 
-def create_map():
+def create_map(environment):
     global obstacles
     locations = []
     for _ in range(10):
@@ -85,17 +86,22 @@ def create_map():
             if type == "tree": 
                 tr = random.randint(1,3)
                 img = "images/pine_"+str(tr)+".png"
+                environment.set_element_state(row,col, environment.DEAD)
             elif type == "flag": 
                     img = "images/skier_flag.png"
+                    environment.set_element_state(row,col, environment.FLAG)
             elif type == "trait":
                     tr = random.randint(2,5)
                     img = "images/reward_" + str(tr) + ".png"
+                    environment.set_element_state(row,col, environment.TRAIT)
             elif type == "ice":
                     tr = random.randint(2,5)
                     img = "images/ice.png"
+                    environment.set_element_state(row,col, environment.DEAD)
             elif type == "plown":
                     tr = random.randint(2,5)
                     img = "images/plown.png"
+                    environment.set_element_state(row,col, environment.DEAD)
             print(type, img)
             obstacle = ObstacleClass(img, location, type)
             obstacles.add(obstacle)
@@ -121,7 +127,7 @@ def kill_skier(skier, hit=True):
     skiers.remove(skier)
     skier.kill()
 
-def main():    
+def main(training = False):
     global screen
     global obstacles
     global skiers
@@ -135,6 +141,8 @@ def main():
     clock = pygame.time.Clock()
     skiers = []
     
+    environment = SnowboardEnvironment()
+    
     for _ in range(num_skiers):
         skier = SkierClass()
         skiers.append(skier)
@@ -144,7 +152,7 @@ def main():
     obstacles = pygame.sprite.Group()
     map_position = 0
     points = 0
-    create_map()
+    create_map(environment)
     font = pygame.font.Font(None, 50)
     
     running = True
@@ -164,7 +172,7 @@ def main():
         map_position += scroll_speed
         
         if map_position >= 640:
-            create_map()
+            create_map(environment)
             map_position = 0
 
         best_score = 0
@@ -184,17 +192,24 @@ def main():
             if skier.energy <= 0:
                 kill_skier(skier, hit=False)
             if hit:
+                x = (hit[0].location[0] - 20)//64
+                y = (hit[0].location[1] - 640 - 20)//64
+
                 if hit[0].type == "tree" or hit[0].type == "ice" or hit[0].type == "plown":
                     kill_skier(skier, hit=True)
                     
                 elif hit[0].type == "flag":
                     skier.score += points
+                    if not training:
+                        environment.set_element_state(x,y, environment.SNOW)
                     
                 elif hit[0].type == "trait":
                     skier.energy += 10
                     if skier.energy > initial_energy:
                         skier.energy = initial_energy
-                    hit[0].kill()
+                    if not training:
+                        hit[0].kill()
+                    environment.set_element_state(x,y, environment.SNOW)
             skier.score+=1
             
         alive_skiers= len(skiers)
@@ -231,5 +246,6 @@ def main():
         animate()
 
 if __name__ == "__main__":
-    main()
+    training = True
+    main(training)
     pygame.quit()
