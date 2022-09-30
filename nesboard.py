@@ -7,7 +7,6 @@
 
 import pygame, sys, os, random
 import numpy as np
-import deap
 from ANN import ANN2
 from environment import SnowboardEnvironment
 from evolution import Evolution
@@ -46,6 +45,7 @@ class SkierClass(pygame.sprite.Sprite):
         self.energy = initial_energy
         self.speed = [0, start_speed]
         self.is_alive = True
+        self.actions = {0:0,1:0,2:0}
         
     def turn(self, direction):
         self.angle = self.angle + direction
@@ -56,7 +56,7 @@ class SkierClass(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
         self.rect.center = center
         self.speed = [self.angle, self.speed[1] - abs(self.angle) * 2]
-        self.energy-=2
+        self.energy+=1
         return self.speed
     
     def set_ANN(self, NN):
@@ -85,13 +85,13 @@ class ObstacleClass(pygame.sprite.Sprite):
 def create_map(environment):
     global obstacles
     locations = []
-    for _ in range(10):
+    for _ in range(15):
         row = random.randint(0, 9)
         col = random.randint(0, 9)
         location = [col * 64 + 20, row * 64 + 20 + 640]
         if not (location in locations):
             locations.append(location)
-            type = random.choices(["tree", "flag", "trait", "ice", "plown"], weights=[5,3,1,0.5,0.5])[0]
+            type = random.choices(["tree", "flag", "trait", "ice", "plown"], weights=[5,1.7,1,1,0.3])[0]
             if type == "tree": 
                 tr = random.randint(1,3)
                 img = "images/pine_"+str(tr)+".png"
@@ -106,7 +106,7 @@ def create_map(environment):
             elif type == "plown":
                     tr = random.randint(2,5)
                     img = "images/plown.png"
-            print(type, img)
+            #print(type, img)
             obstacle = ObstacleClass(img, location, type)
             obstacles.add(obstacle)
             
@@ -116,7 +116,7 @@ def create_map(environment):
         y = (o.location[0] - 20) // 64
         x = (o.location[1]  - 640 - 20)// 64
         #if y < 640:
-        print(o.location, o.type)
+        #print(o.location, o.type)
         if o.type == "tree" or o.type=="plow" or o.type=="ice":
             V = environment.DEAD
         elif o.type == "trait":
@@ -125,8 +125,7 @@ def create_map(environment):
                 V = environment.FLAG
                 
         environment.set_element_state(x, y, V)
-        
-    print("End create_map")
+    #print("End create_map")
 
 def animate():
     screen.fill([255, 255, 255])
@@ -163,7 +162,6 @@ def sample_action(sk, env, map_position, random=False):
     return action
 
 def refresh_environment(obstacles, environment):
-    
     print("--------------------------")    
     environment.reset()
     for o in obstacles:
@@ -172,7 +170,7 @@ def refresh_environment(obstacles, environment):
         y = (o.location[0] - 20) // 64
         x = (o.location[1]  - 640 - 20)// 64
         #if y < 640:
-        print(o.location, o.type)
+        #print(o.location, o.type)
         if o.type == "tree" or o.type=="plow" or o.type=="ice":
             V = environment.DEAD
         elif o.type == "trait":
@@ -192,6 +190,7 @@ def main(generation, num_skiers=44, training=False):
     global energy_text
     global scroll_speed
     global results
+    global generation_number
     
     pygame.init()
     screen = pygame.display.set_mode([640, 640])
@@ -204,7 +203,7 @@ def main(generation, num_skiers=44, training=False):
         skier.set_ANN(generation[i])
         skiers.append(skier)
     
-    start_speed = 20
+    start_speed = 100
     scroll_speed = start_speed
     obstacles = pygame.sprite.Group()
     map_position = 0
@@ -212,6 +211,7 @@ def main(generation, num_skiers=44, training=False):
     create_map(environment)
     font = pygame.font.Font(None, 50)
     
+    prev_action = None
     running = True
     while running:
         clock.tick(int(scroll_speed))
@@ -246,36 +246,52 @@ def main(generation, num_skiers=44, training=False):
                 if skier.score > best_score:
                     best_score = skier.score
                 action = sample_action(skier, environment, map_position)
+                skier.actions[action]+=1
+                if action == 0 and skier.angle==0:
+                    skier.score-=1
+                    skier.energy-=5
+                    
                 if action == SKIER_LEFT:
                     skier.turn(-1)
+                    skier.score+=abs(skier.angle)
                 elif action == SKIER_RIGHT:
+                    skier.score+=abs(skier.angle)
                     skier.turn(1)
                 skier.move()
+                #skier.score += 1
+                            
                 hit = pygame.sprite.spritecollide(skier, obstacles, False)
+                if action == SKIER_RIGHT and skier.rect.centerx >= 620 or \
+                   action == SKIER_LEFT  and skier.rect.centerx <= 20:
+                       skier.score -= 1
+                       kill_skier(skier, hit=True)
                 if skier.energy <= 0:
-                    kill_skier(skier, hit=False)
+                    skier.score-=5
+                    kill_skier(skier, hit=True)
                 if hit:
                     if hit[0].type == "tree" or hit[0].type == "ice" or hit[0].type == "plown":
+                        skier.score -= 1
                         kill_skier(skier, hit=True)
                         
                     elif hit[0].type == "flag":
-                        skier.score += points
+                        skier.score += 10 + abs(skier.angle) #points
                         if not training:
                             hit[0].kill()
                         
                     elif hit[0].type == "trait":
                         skier.energy += 10
-                        if skier.energy > initial_energy:
-                            skier.energy = initial_energy
+                        skier.score  += 1
+                        #if skier.energy > initial_energy:
+                        #    skier.energy = initial_energy
                         if not training:
                             hit[0].kill()
-                skier.score+=1
-                skier.energy -=1
-        
+                #skier.energy -=1
+
         if alive_skiers==0:
-            pygame.time.delay(1000)
-            screen.fill([255, 255, 255])
-            game_over = font.render("Game Over!", 1, (0, 0, 0))
+            if not training:
+                pygame.time.delay(1000)
+                screen.fill([255, 255, 255])
+                game_over = font.render("Game Over!", 1, (0, 0, 0))
             scores_rows = []
             scores_table = []
             for row in scores_rows:
@@ -290,7 +306,8 @@ def main(generation, num_skiers=44, training=False):
             table_header = font.render("High Scores:", 1, (0, 0, 0))
             screen.blit(table_header, [20, 170])    
             screen.blit(score_text, [20, 70])
-            screen.blit(game_over, [20, 20])
+            if not training:
+                screen.blit(game_over, [20, 20])
             pygame.display.flip()
             if not training:
                 while True:
@@ -302,43 +319,50 @@ def main(generation, num_skiers=44, training=False):
             
         obstacles.update()
         score_text  = font.render("Best score: " + str(best_score), 1, (0, 0, 0))
-        energy_text = font.render("Energy: " + str(best_energy), 1, (0, 0, 0))
+        energy_text = font.render("Generations: " + str(generation_number), 1, (0, 0, 0))
         scroll_speed+=1e-2
         points = int(scroll_speed / start_speed)
         animate()
         
     rewards = []
+    action_debrief = []
     for skier in skiers:
         rewards.append(skier.score)
-    return rewards 
+        action_debrief.append(skier.actions)
+    return rewards, action_debrief
 
 if __name__ == "__main__":
+    generation_number = 0
     training = True
     
-    evolution = Evolution(num_parents=10, mutation_prob=0.05)
-
     environment = SnowboardEnvironment()
     D = environment.get_state_dimension() + 5
-    M1 = 32
-    M2 = 96
+    M1 = 512
+    M2 = 2048
     K = environment.get_num_actions()
     action_max = environment.get_num_actions()
     
+    print("Setting up generation")
     generation = []
-    num_subjects = 100
+    num_subjects = 50
+    initial_params = []
     for i in range(num_subjects):
         nn = ANN2(D, M1, M2, K, action_max)
         nn.init()
         generation.append(nn)
+        initial_params.append(nn.get_params())
     
+    evolution = Evolution(initial_params=np.array(initial_params), num_parents=4, mutation_prob=0.05)
     done = False
     i = 0
     while not done:
-        rewards = main(generation, num_skiers=num_subjects, training=True)
+        rewards, action_debrief = main(generation, num_skiers=num_subjects, training=True)
         
-        generation = evolution.evolve(generation, rewards)
-        if i > 10:
+        generation = evolution.evolve(generation, rewards, action_debrief)
+        print(i, np.mean(sorted(rewards)[-10:]))
+        if i > 1000:
             break
         i+=1
+        generation_number+=1
         
     pygame.quit()
